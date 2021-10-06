@@ -1,0 +1,9 @@
+---
+# See full syntax at https://docs.onica.com/projects/runway
+deployments:
+  - modules:
+      - path: tf-state-vpc.cfn
+      - path: vpc-terraform.tf
+      - path: img-mgr-terraform.tf
+    regions:
+      - us-west-1
