@@ -1,10 +1,9 @@
 # Backend setup
 terraform {
   backend "s3" {
-    key = "sampleapp.tfstate"
+    key = "common-vpc.tfstate"
   }
 }
-
 # Variable definitions
 variable "region" {}
 
@@ -16,6 +15,10 @@ provider "aws" {
 
 # Data and resources
 
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 resource "aws_eip" "nat1" {
   vpc = true
 }
@@ -25,7 +28,7 @@ resource "aws_eip" "nat2" {
 
 ## VPC creation
 
-resource "aws_vpc" "prod-vpc" {
+resource "aws_vpc" "common-vpc" {
     cidr_block = "10.0.0.0/16"
     enable_dns_support = "true" #gives you an internal domain name
     enable_dns_hostnames = "true" #gives you an internal host name
@@ -33,157 +36,149 @@ resource "aws_vpc" "prod-vpc" {
     instance_tenancy = "default"
 
     tags = {
-      Name = "prod_vpc"
+      Name = "common_vpc"
     }
 }
 
 ## Public and Private Subnets
 
-resource "aws_subnet" "prod-subnet-public-1" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_subnet" "common-subnet-public-1" {
+    vpc_id = aws_vpc.common-vpc.id
     cidr_block = "10.0.1.0/24"
     map_public_ip_on_launch = "true" //it makes this a public subnet
-    availability_zone = "us-west-1a"
+    availability_zone = data.aws_availability_zones.available.names[0]
 
     tags = {
-        Name = "prod-subnets-public"
+        Name = "common-subnets-public"
     }
 }
 
-resource "aws_subnet" "prod-subnet-public-2" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_subnet" "common-subnet-public-2" {
+    vpc_id = aws_vpc.common-vpc.id
     cidr_block = "10.0.2.0/24"
     map_public_ip_on_launch = "true" //it makes this a public subnet
-    availability_zone = "us-west-1b"
+    availability_zone = data.aws_availability_zones.available.names[1]
 
     tags = {
-        Name = "prod-subnets-public"
+        Name = "common-subnets-public"
     }
 }
 
-resource "aws_subnet" "prod-subnet-private-1" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_subnet" "common-subnet-private-1" {
+    vpc_id = aws_vpc.common-vpc.id
     cidr_block = "10.0.3.0/24"
     map_public_ip_on_launch = "false" //it makes this a public subnet
-    availability_zone = "us-west-1a"
+    availability_zone = data.aws_availability_zones.available.names[0]
 
     tags = {
-        Name = "prod-subnets-private"
+        Name = "common-subnets-private"
     }
 }
 
-resource "aws_subnet" "prod-subnet-private-2" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_subnet" "common-subnet-private-2" {
+    vpc_id = aws_vpc.common-vpc.id
     cidr_block = "10.0.4.0/24"
     map_public_ip_on_launch = "false" //it makes this a public subnet
-    availability_zone = "us-west-1b"
+    availability_zone = data.aws_availability_zones.available.names[1]
 
     tags = {
-        Name = "prod-subnets-private"
+        Name = "common-subnets-private"
     }
 }
 
 ## Internet Gateway for VPC
 
-resource "aws_internet_gateway" "prod-igw" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_internet_gateway" "common-igw" {
+    vpc_id = aws_vpc.common-vpc.id
     tags = {
-        Name = "prod-igw"
+        Name = "common-igw"
     }
 }
 
 ##  Public Route Table
 
-resource "aws_route_table" "prod-public-route-table" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_route_table" "common-public-route-table" {
+    vpc_id = aws_vpc.common-vpc.id
 
     route {
         //associated subnet can reach everywhere
         cidr_block = "0.0.0.0/0"         //CRT uses this IGW to reach internet
-        gateway_id = "${aws_internet_gateway.prod-igw.id}"
+        gateway_id = aws_internet_gateway.common-igw.id
     }
 
     tags = {
-        Name = "prod-public-route-table"
+        Name = "common-public-route-table"
     }
 }
 
 ##  Public Route Table Associations
 
-resource "aws_route_table_association" "prod-crta-public-subnet-1"{
-    subnet_id = "${aws_subnet.prod-subnet-public-1.id}"
-    route_table_id = "${aws_route_table.prod-public-route-table.id}"
+resource "aws_route_table_association" "common-crta-public-subnet-1"{
+    subnet_id = aws_subnet.common-subnet-public-1.id
+    route_table_id = aws_route_table.common-public-route-table.id
 }
-resource "aws_route_table_association" "prod-crta-public-subnet-2"{
-    subnet_id = "${aws_subnet.prod-subnet-public-2.id}"
-    route_table_id = "${aws_route_table.prod-public-route-table.id}"
+resource "aws_route_table_association" "common-crta-public-subnet-2"{
+    subnet_id = aws_subnet.common-subnet-public-2.id
+    route_table_id = aws_route_table.common-public-route-table.id
 }
 
 ##  NAT Gateway creation
 
 resource "aws_nat_gateway" "nat-gw-a" {
   allocation_id = aws_eip.nat1.id
-  subnet_id     = aws_subnet.prod-subnet-public-1.id
+  subnet_id     = aws_subnet.common-subnet-public-1.id
 
   tags = {
     Name = "nat-gw-a"
   }
-
-  # To ensure proper ordering, it is recommended to add an explicit dependency
-  # on the Internet Gateway for the VPC.
-  depends_on = [aws_internet_gateway.prod-igw]
 }
 
 resource "aws_nat_gateway" "nat-gw-b" {
   allocation_id = aws_eip.nat2.id
-  subnet_id     = aws_subnet.prod-subnet-public-2.id
+  subnet_id     = aws_subnet.common-subnet-public-2.id
 
   tags = {
     Name = "nat-gw-b"
   }
-
-  # To ensure proper ordering, it is recommended to add an explicit dependency
-  # on the Internet Gateway for the VPC.
-  depends_on = [aws_internet_gateway.prod-igw]
 }
 
 ## Private Route Tables
 
-resource "aws_route_table" "prod-private-route-table-a" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_route_table" "common-private-route-table-a" {
+    vpc_id = aws_vpc.common-vpc.id
 
     route {
         //associated subnet can reach everywhere
         cidr_block = "0.0.0.0/0"         //CRT uses this IGW to reach internet
-        gateway_id = "${aws_nat_gateway.nat-gw-a.id}"
+        gateway_id = aws_nat_gateway.nat-gw-a.id
     }
 
     tags = {
-        Name = "prod-private-route-table-a"
+        Name = "common-private-route-table-a"
     }
 }
 
-resource "aws_route_table" "prod-private-route-table-b" {
-    vpc_id = "${aws_vpc.prod-vpc.id}"
+resource "aws_route_table" "common-private-route-table-b" {
+    vpc_id = aws_vpc.common-vpc.id
 
     route {
         //associated subnet can reach everywhere
         cidr_block = "0.0.0.0/0"         //CRT uses this IGW to reach internet
-        gateway_id = "${aws_nat_gateway.nat-gw-b.id}"
+        gateway_id = aws_nat_gateway.nat-gw-b.id
     }
 
     tags = {
-        Name = "prod-private-route-table-b"
+        Name = "common-private-route-table-b"
     }
 }
 
 ## Private Route Tables Associations
 
-resource "aws_route_table_association" "prod-crta-private-subnet-1"{
-    subnet_id = "${aws_subnet.prod-subnet-private-1.id}"
-    route_table_id = "${aws_route_table.prod-private-route-table-a.id}"
+resource "aws_route_table_association" "common-crta-private-subnet-1"{
+    subnet_id = aws_subnet.common-subnet-private-1.id
+    route_table_id = aws_route_table.common-private-route-table-a.id
 }
-resource "aws_route_table_association" "prod-crta-private-subnet-2"{
-    subnet_id = "${aws_subnet.prod-subnet-private-2.id}"
-    route_table_id = "${aws_route_table.prod-private-route-table-b.id}"
+resource "aws_route_table_association" "common-crta-private-subnet-2"{
+    subnet_id = aws_subnet.common-subnet-private-2.id
+    route_table_id = aws_route_table.common-private-route-table-b.id
 }

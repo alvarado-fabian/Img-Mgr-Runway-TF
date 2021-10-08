@@ -9,7 +9,7 @@ Host *
     StrictHostKeyChecking no
 EOF
 chmod 600 ~/.ssh/config
-git clone https://github.com/dianephan/flask-aws-storage.git
+git clone https://github.com/alvarado-fabian/flask-aws-storage.git
 cd flask-aws-storage
 mkdir uploads
 chown -R ec2-user:ec2-user .
@@ -39,7 +39,7 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-sed -i s/lats-image-data/img-mgr-bucket-121561815618916915/ app.py
+sed -i s/lats-image-data/${S3Bucket}/ app.py
 systemctl daemon-reload
 systemctl start imgmgr
 
