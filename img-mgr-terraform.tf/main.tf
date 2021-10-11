@@ -10,7 +10,7 @@ variable "region" {}
 
 # Provider and access setup
 provider "aws" {
-  version = "~> 2.0"
+  version = ">= 3.43.0"
   region = "${var.region}"
 }
 
@@ -32,7 +32,7 @@ resource "aws_s3_bucket" "img-mgr-s3" {
   acl    = "private"
 
   tags = {
-    Name        = "s3-bucket"
+    Name = "s3-bucket"
   }
 }
 
@@ -200,5 +200,60 @@ resource "aws_autoscaling_group" "img-mgr-asg" {
   launch_template {
     id      = aws_launch_template.img-mgr-launch-temp.id
     version = "$Latest"
+  }
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+    triggers = [ "launch_template" ]
+  }
+}
+
+## Cloudfront Distro
+
+module "cdn" {
+  source = "terraform-aws-modules/cloudfront/aws"
+
+  comment             = "My awesome CloudFront"
+  enabled             = true
+  is_ipv6_enabled     = true
+  price_class         = "PriceClass_200"
+  retain_on_delete    = false
+  wait_for_deployment = false
+
+  origin = {
+    imgmgrorigin = {
+      domain_name = aws_elb.Img-Mgr-ELB.dns_name
+      custom_origin_config = {
+        http_port              = 80
+        https_port              = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1"]
+      }
+    }
+  }
+  default_cache_behavior = {
+    target_origin_id       = "imgmgrorigin"
+    viewer_protocol_policy = "redirect-to-https"
+
+    allowed_methods = [
+      "GET",
+      "HEAD",
+      "OPTIONS",
+      "PUT",
+      "PATCH",
+      "POST",
+      "DELETE"
+    ]
+    cached_methods  = [
+      "GET",
+      "HEAD"
+    ]
+    compress        = true
+    query_string    = true
+  }
+  viewer_certificate = {
+    cloudfront_default_certificate = true
   }
 }
